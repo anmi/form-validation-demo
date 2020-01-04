@@ -11,13 +11,13 @@ export interface InputState {
 
 export class InputModel {
 	constructor(
-		public state$: Observable<InputState>,
+		public state: Observable<InputState>,
 		public callbacks: InputCallbackProps
 	) {}
 
 	mapWith<T>(obs$: Observable<T>, fn: (a: InputState, b: T) => InputState) {
 		return new InputModel(
-			combineLatest(this.state$, obs$).pipe(
+			combineLatest(this.state, obs$).pipe(
 				map(([state, obs]) => fn(state, obs))
 			),
 			this.callbacks

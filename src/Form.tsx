@@ -4,15 +4,9 @@ import { Input, InputCallbackProps } from "./Input";
 import { withRX } from "@devexperts/react-kit/dist/utils/with-rx2";
 import { createHandler } from "@devexperts/rx-utils/dist/create-handler.utils";
 import { InputState, InputModel } from "./model/InputState";
-import { startWith, map, mapTo, reduce, scan } from "rxjs/operators";
-import {
-	combineLatest,
-	BehaviorSubject,
-	Observable,
-	Subject,
-	Subscription
-} from "rxjs";
-import { AccountModel } from "./model/formModel";
+import { startWith, map, mapTo } from "rxjs/operators";
+import { combineLatest } from "rxjs";
+import { arrayModels, ItemWrapper, ModelsCallbacks } from "./utils/arrayModels";
 
 type AppFormProps = {
 	name: InputState;
@@ -21,8 +15,8 @@ type AppFormProps = {
 	passwordCallbacks: InputCallbackProps;
 	confirmPassword: InputState;
 	confirmPasswordCallbacks: InputCallbackProps;
-	accounts: InputModelItem[];
-	accountsCallbacks: ReturnType<typeof arrayModels>["callbacks"];
+	accounts: ItemWrapper<InputState>[];
+	accountsCallbacks: ModelsCallbacks<InputCallbackProps>;
 };
 
 const defaultInputState: InputState = {
@@ -49,10 +43,10 @@ const AppFormRaw: React.FC<AppFormProps> = props => {
 			<button onClick={props.accountsCallbacks.add}>add</button>
 			{props.accounts.map(account => {
 				return (
-					<div>
+					<div key={account.id}>
 						<Input
 							name="Sitename"
-							state={account.model}
+							state={account.state}
 							{...props.accountsCallbacks.item(account.id)}
 						/>
 					</div>
@@ -66,60 +60,48 @@ interface InputModelItem {
 	id: string;
 	model: InputState;
 }
-type InputModelOperator = (from: InputModelItem[]) => InputModelItem[];
+// type InputModelOperator = (from: InputModelItem[]) => InputModelItem[];
 
-function makeId() {
-	return `${Math.random()}-${Math.random()}-${Math.random()}`;
-}
+// function arrayModels(_models: InputModel[]) {
+// 	const bs = new BehaviorSubject<InputModelOperator>(a => a);
 
-function arrayModels(_models: InputModel[]) {
-	const bs = new BehaviorSubject<InputModelOperator>(a => a);
+// 	const values$ = bs.pipe(
+// 		scan((state, fn) => fn(state), [] as InputModelItem[])
+// 	);
 
-	const values$ = bs.pipe(
-		scan((state, fn) => fn(state), [] as InputModelItem[])
-	);
+// 	let callbacks: { [id: string]: InputCallbackProps } = {};
+// 	let subscriptions: { [id: string]: Subscription } = {};
 
-	bs.subscribe(bs => {
-		console.log("behave!!!", bs);
-	});
-	values$.subscribe(v => {
-		console.log("values ---", v);
-	});
+// 	return {
+// 		values$,
+// 		callbacks: {
+// 			item: (id: string) => {
+// 				return callbacks[id];
+// 			},
+// 			add: () => {
+// 				const id = makeId();
+// 				const model = createNonNullableInput();
+// 				callbacks[id] = model.callbacks;
+// 				bs.next(as => [
+// 					...as.filter(a => a.id !== id),
+// 					{ id, model: defaultInputState }
+// 				]);
 
-	let callbacks: { [id: string]: InputCallbackProps } = {};
-	let subscriptions: { [id: string]: Subscription } = {};
-
-	return {
-		values$,
-		callbacks: {
-			item: (id: string) => {
-				return callbacks[id];
-			},
-			add: () => {
-				const id = makeId();
-				const model = createNonNullableInput();
-				callbacks[id] = model.callbacks;
-				console.log("add!!!");
-				bs.next(as => [
-					...as.filter(a => a.id !== id),
-					{ id, model: defaultInputState }
-				]);
-
-				subscriptions[id] = model.state$.subscribe(model => {
-					bs.next(as => [
-						...as.filter(a => a.id !== id),
-						{ id, model }
-					]);
-				});
-			},
-			remove: (id: string) => {
-				subscriptions[id].unsubscribe();
-				delete subscriptions[id];
-				bs.next(as => as.filter(a => a.id !== id));
-			}
-		}
-	};
-}
+// 				subscriptions[id] = model.state$.subscribe(model => {
+// 					bs.next(as => [
+// 						...as.filter(a => a.id !== id),
+// 						{ id, model }
+// 					]);
+// 				});
+// 			},
+// 			remove: (id: string) => {
+// 				subscriptions[id].unsubscribe();
+// 				delete subscriptions[id];
+// 				bs.next(as => as.filter(a => a.id !== id));
+// 			}
+// 		}
+// 	};
+// }
 
 function createNonNullableInput(): InputModel {
 	const valueHandler = createHandler<string>();
@@ -164,11 +146,11 @@ function createAccount() {
 	};
 }
 
-export const AppForm = withRX(AppFormRaw)(props$ => {
+export const AppForm = withRX(AppFormRaw)(_props$ => {
 	const name = createNonNullableInput();
 	const password = createNonNullableInput();
 	const confirmPassword = createNonNullableInput().mapWith(
-		password.state$,
+		password.state,
 		(confirm, password) => {
 			return {
 				...confirm,
@@ -182,7 +164,9 @@ export const AppForm = withRX(AppFormRaw)(props$ => {
 			};
 		}
 	);
-	const accounts = arrayModels([]);
+	const accounts = arrayModels(defaultInputState, () =>
+		createNonNullableInput()
+	);
 
 	return {
 		defaultProps: {
@@ -196,9 +180,9 @@ export const AppForm = withRX(AppFormRaw)(props$ => {
 			accountsCallbacks: accounts.callbacks
 		},
 		props: {
-			name: name.state$,
-			password: password.state$,
-			confirmPassword: confirmPassword.state$,
+			name: name.state,
+			password: password.state,
+			confirmPassword: confirmPassword.state,
 			accounts: accounts.values$
 		}
 	};
