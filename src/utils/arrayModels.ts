@@ -48,9 +48,11 @@ export function arrayModels<TState, TCallbacks>(
 				});
 			},
 			remove: (id: string) => {
-				subscriptions[id].unsubscribe();
-				delete subscriptions[id];
-				bs.next(as => as.filter(a => a.id !== id));
+				return () => {
+					subscriptions[id].unsubscribe();
+					delete subscriptions[id];
+					bs.next(as => as.filter(a => a.id !== id));
+				};
 			}
 		}
 	};
@@ -59,5 +61,5 @@ export function arrayModels<TState, TCallbacks>(
 export type ModelsCallbacks<TCallbacks> = {
 	item(id: string): TCallbacks;
 	add(): void;
-	remove(id: string): void;
+	remove(id: string): () => void;
 };

@@ -7,6 +7,7 @@ import { InputState, InputModel } from "./model/InputState";
 import { startWith, map, mapTo } from "rxjs/operators";
 import { combineLatest } from "rxjs";
 import { arrayModels, ItemWrapper, ModelsCallbacks } from "./utils/arrayModels";
+import { Form, Col, Button } from "react-bootstrap";
 
 type AppFormProps = {
 	name: InputState;
@@ -15,8 +16,8 @@ type AppFormProps = {
 	passwordCallbacks: InputCallbackProps;
 	confirmPassword: InputState;
 	confirmPasswordCallbacks: InputCallbackProps;
-	accounts: ItemWrapper<InputState>[];
-	accountsCallbacks: ModelsCallbacks<InputCallbackProps>;
+	accounts: ItemWrapper<AccountState>[];
+	accountsCallbacks: ModelsCallbacks<AccountCallbacks>;
 };
 
 const defaultInputState: InputState = {
@@ -24,6 +25,18 @@ const defaultInputState: InputState = {
 	error: null,
 	isFocused: false,
 	isVisited: false
+};
+
+type AccountState = { sitename: InputState; username: InputState };
+
+type AccountCallbacks = {
+	sitename: InputCallbackProps;
+	username: InputCallbackProps;
+};
+
+const defaultAccountState: AccountState = {
+	sitename: defaultInputState,
+	username: defaultInputState
 };
 
 const AppFormRaw: React.FC<AppFormProps> = props => {
@@ -40,70 +53,62 @@ const AppFormRaw: React.FC<AppFormProps> = props => {
 				state={props.confirmPassword}
 				{...props.confirmPasswordCallbacks}
 			/>
-			<button onClick={props.accountsCallbacks.add}>add</button>
+			<Form.Row as={Col}>
+				<Col>
+					<Form.Label>Accounts:</Form.Label>
+				</Col>
+			</Form.Row>
 			{props.accounts.map(account => {
 				return (
 					<div key={account.id}>
-						<Input
-							name="Sitename"
-							state={account.state}
-							{...props.accountsCallbacks.item(account.id)}
-						/>
+						<Form.Row>
+							<Col>
+								<Input
+									name="Sitename"
+									state={account.state.sitename}
+									{...props.accountsCallbacks.item(account.id)
+										.sitename}
+									showLabel={false}
+								/>
+							</Col>
+							<Col>
+								<Input
+									name="Username"
+									state={account.state.username}
+									{...props.accountsCallbacks.item(account.id)
+										.username}
+									showLabel={false}
+								/>
+							</Col>
+							<Col>
+								<Button
+									variant="dark"
+									onClick={props.accountsCallbacks.remove(
+										account.id
+									)}
+								>
+									Remove
+								</Button>
+							</Col>
+						</Form.Row>
 					</div>
 				);
 			})}
+			<Form.Group as={Col}>
+				<Button variant="primary" onClick={props.accountsCallbacks.add}>
+					Add account
+				</Button>
+			</Form.Group>
+			<Form.Group as={Col}>
+				<Button variant="primary" onClick={props.accountsCallbacks.add}>
+					Submit
+				</Button>
+			</Form.Group>
 		</div>
 	);
 };
 
-interface InputModelItem {
-	id: string;
-	model: InputState;
-}
-// type InputModelOperator = (from: InputModelItem[]) => InputModelItem[];
-
-// function arrayModels(_models: InputModel[]) {
-// 	const bs = new BehaviorSubject<InputModelOperator>(a => a);
-
-// 	const values$ = bs.pipe(
-// 		scan((state, fn) => fn(state), [] as InputModelItem[])
-// 	);
-
-// 	let callbacks: { [id: string]: InputCallbackProps } = {};
-// 	let subscriptions: { [id: string]: Subscription } = {};
-
-// 	return {
-// 		values$,
-// 		callbacks: {
-// 			item: (id: string) => {
-// 				return callbacks[id];
-// 			},
-// 			add: () => {
-// 				const id = makeId();
-// 				const model = createNonNullableInput();
-// 				callbacks[id] = model.callbacks;
-// 				bs.next(as => [
-// 					...as.filter(a => a.id !== id),
-// 					{ id, model: defaultInputState }
-// 				]);
-
-// 				subscriptions[id] = model.state$.subscribe(model => {
-// 					bs.next(as => [
-// 						...as.filter(a => a.id !== id),
-// 						{ id, model }
-// 					]);
-// 				});
-// 			},
-// 			remove: (id: string) => {
-// 				subscriptions[id].unsubscribe();
-// 				delete subscriptions[id];
-// 				bs.next(as => as.filter(a => a.id !== id));
-// 			}
-// 		}
-// 	};
-// }
-
-function createNonNullableInput(): InputModel {
+function createNonNullableInput(): InputModel<InputState, InputCallbackProps> {
 	const valueHandler = createHandler<string>();
 	const value$ = valueHandler.value$.pipe(startWith(""));
 	const focused = createHandler<boolean>();
@@ -140,10 +145,14 @@ function createAccount() {
 	const sitename = createNonNullableInput();
 	const username = createNonNullableInput();
 
-	return {
-		sitename,
-		username
-	};
+	const state = combineLatest(sitename.state, username.state).pipe(
+		map(([sitename, username]) => ({ sitename, username }))
+	);
+
+	return new InputModel<AccountState, AccountCallbacks>(state, {
+		sitename: sitename.callbacks,
+		username: username.callbacks
+	});
 }
 
 export const AppForm = withRX(AppFormRaw)(_props$ => {
@@ -164,9 +173,7 @@ export const AppForm = withRX(AppFormRaw)(_props$ => {
 			};
 		}
 	);
-	const accounts = arrayModels(defaultInputState, () =>
-		createNonNullableInput()
-	);
+	const accounts = arrayModels(defaultAccountState, createAccount);
 
 	return {
 		defaultProps: {

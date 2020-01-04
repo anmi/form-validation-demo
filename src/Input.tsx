@@ -12,11 +12,13 @@ export interface InputCallbackProps {
 export type InputProps = {
 	name: string;
 	state: InputState;
+	showLabel?: boolean;
 } & InputCallbackProps;
 
 export const Input: React.FC<InputProps> = ({
 	name,
 	state,
+	showLabel = true,
 	onBlur,
 	onFocus,
 	onChange
@@ -24,7 +26,7 @@ export const Input: React.FC<InputProps> = ({
 	return (
 		<div>
 			<Form.Group as={Col}>
-				<Form.Label>{name}</Form.Label>
+				{showLabel && <Form.Label>{name}</Form.Label>}
 				<Form.Control
 					type="text"
 					placeholder={name}
