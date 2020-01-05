@@ -4,10 +4,12 @@ import { Input, InputCallbackProps } from "./Input";
 import { withRX } from "@devexperts/react-kit/dist/utils/with-rx2";
 import { createHandler } from "@devexperts/rx-utils/dist/create-handler.utils";
 import { InputState, InputModel } from "./model/InputState";
-import { startWith, map, mapTo } from "rxjs/operators";
-import { combineLatest } from "rxjs";
+import { startWith, map, mapTo, switchMap, filter } from "rxjs/operators";
+import { combineLatest, from, Observable, of, merge } from "rxjs";
 import { arrayModels, ItemWrapper, ModelsCallbacks } from "./utils/arrayModels";
 import { Form, Col, Button } from "react-bootstrap";
+import { submitForm } from "./services/form";
+import { FormInputResponse, isFormResponseFailure } from "./model/formModel";
 
 type AppFormProps = {
 	name: InputState;
@@ -18,6 +20,7 @@ type AppFormProps = {
 	confirmPasswordCallbacks: InputCallbackProps;
 	accounts: ItemWrapper<AccountState>[];
 	accountsCallbacks: ModelsCallbacks<AccountCallbacks>;
+	submitForm: () => void;
 };
 
 const defaultInputState: InputState = {
@@ -100,7 +103,7 @@ const AppFormRaw: React.FC<AppFormProps> = props => {
 				</Button>
 			</Form.Group>
 			<Form.Group as={Col}>
-				<Button variant="primary" onClick={props.accountsCallbacks.add}>
+				<Button variant="primary" onClick={props.submitForm}>
 					Submit
 				</Button>
 			</Form.Group>
@@ -108,14 +111,16 @@ const AppFormRaw: React.FC<AppFormProps> = props => {
 	);
 };
 
-function createNonNullableInput(): InputModel<InputState, InputCallbackProps> {
+function createNonNullableInput(
+	serverResponse$: Observable<FormInputResponse>
+): InputModel<InputState, InputCallbackProps> {
 	const valueHandler = createHandler<string>();
 	const value$ = valueHandler.value$.pipe(startWith(""));
 	const focused = createHandler<boolean>();
 	const focused$ = focused.value$.pipe(startWith(false));
 	const visited$ = focused.value$.pipe(mapTo(true), startWith(false));
 
-	const error$ = combineLatest(value$, focused$, visited$).pipe(
+	const userError$ = combineLatest(value$, focused$, visited$).pipe(
 		map(([value, focused, visited]) => {
 			if (value === "" && !focused && visited) {
 				return "Empty!";
@@ -123,6 +128,17 @@ function createNonNullableInput(): InputModel<InputState, InputCallbackProps> {
 				return null;
 			}
 		})
+	);
+	const serverError$ = merge(
+		serverResponse$.pipe(
+			map(r => (r.error ? r.error : null)),
+			startWith(null)
+		),
+		focused$.pipe(mapTo(null))
+	);
+
+	const error$ = combineLatest(serverError$, userError$).pipe(
+		map(([user, server]) => user || server)
 	);
 
 	const state$ = combineLatest(error$, value$, focused$, visited$).pipe(
@@ -142,8 +158,8 @@ function createNonNullableInput(): InputModel<InputState, InputCallbackProps> {
 }
 
 function createAccount() {
-	const sitename = createNonNullableInput();
-	const username = createNonNullableInput();
+	const sitename = createNonNullableInput(of({ value: "" }));
+	const username = createNonNullableInput(of({ value: "" }));
 
 	const state = combineLatest(sitename.state, username.state).pipe(
 		map(([sitename, username]) => ({ sitename, username }))
@@ -156,23 +172,42 @@ function createAccount() {
 }
 
 export const AppForm = withRX(AppFormRaw)(_props$ => {
-	const name = createNonNullableInput();
-	const password = createNonNullableInput();
-	const confirmPassword = createNonNullableInput().mapWith(
-		password.state,
-		(confirm, password) => {
-			return {
-				...confirm,
-				error: confirm.error
-					? confirm.error
-					: confirm.value !== password.value &&
-					  confirm.isVisited &&
-					  !confirm.isFocused
-					? "Passwords didn't match"
-					: null
-			};
-		}
+	const submitHandler = createHandler<void>();
+	const formResponse = submitHandler.value$.pipe(
+		switchMap(() =>
+			from(
+				submitForm({
+					name: "sdf",
+					password: "pass",
+					confirmPassword: "sdf",
+					accounts: []
+				})
+			)
+		)
 	);
+
+	const serverErrors = formResponse.pipe(filter(isFormResponseFailure));
+
+	const name = createNonNullableInput(
+		serverErrors.pipe(map(r => r.errors.name))
+	);
+	const password = createNonNullableInput(
+		serverErrors.pipe(map(r => r.errors.password))
+	);
+	const confirmPassword = createNonNullableInput(
+		serverErrors.pipe(map(r => r.errors.confirmPassword))
+	).mapWith(password.state, (confirm, password) => {
+		return {
+			...confirm,
+			error: confirm.error
+				? confirm.error
+				: confirm.value !== password.value &&
+				  confirm.isVisited &&
+				  !confirm.isFocused
+				? "Passwords didn't match"
+				: null
+		};
+	});
 	const accounts = arrayModels(defaultAccountState, createAccount);
 
 	return {
@@ -184,7 +219,10 @@ export const AppForm = withRX(AppFormRaw)(_props$ => {
 			confirmPassword: defaultInputState,
 			confirmPasswordCallbacks: confirmPassword.callbacks,
 			accounts: [],
-			accountsCallbacks: accounts.callbacks
+			accountsCallbacks: accounts.callbacks,
+			submitForm: () => {
+				submitHandler.handle();
+			}
 		},
 		props: {
 			name: name.state,
