@@ -10,6 +10,20 @@ export interface FormModel {
 	accounts: AccountModel[];
 }
 
+function isFormAccountEqual(a: AccountModel, b: AccountModel) {
+	return a.username === b.username && a.sitename === b.sitename;
+}
+
+export function isFormEqual(a: FormModel, b: FormModel) {
+	return (
+		a.name === b.name &&
+		a.password === b.password &&
+		a.confirmPassword === b.confirmPassword &&
+		a.accounts.length === b.accounts.length &&
+		a.accounts.every((aItem, i) => isFormAccountEqual(aItem, b.accounts[i]))
+	);
+}
+
 export interface FormInputResponse {
 	value: string;
 	error?: string;

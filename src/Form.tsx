@@ -4,12 +4,27 @@ import { Input, InputCallbackProps } from "./Input";
 import { withRX } from "@devexperts/react-kit/dist/utils/with-rx2";
 import { createHandler } from "@devexperts/rx-utils/dist/create-handler.utils";
 import { InputState, InputModel } from "./model/InputState";
-import { startWith, map, mapTo, switchMap, filter } from "rxjs/operators";
+import {
+	startWith,
+	map,
+	mapTo,
+	switchMap,
+	filter,
+	withLatestFrom,
+	distinctUntilChanged,
+	delay
+} from "rxjs/operators";
 import { combineLatest, from, Observable, of, merge } from "rxjs";
 import { arrayModels, ItemWrapper, ModelsCallbacks } from "./utils/arrayModels";
 import { Form, Col, Button } from "react-bootstrap";
 import { submitForm } from "./services/form";
-import { FormInputResponse, isFormResponseFailure } from "./model/formModel";
+import {
+	FormInputResponse,
+	isFormResponseFailure,
+	FormAccountResponse,
+	FormModel,
+	isFormEqual
+} from "./model/formModel";
 
 type AppFormProps = {
 	name: InputState;
@@ -115,7 +130,10 @@ function createNonNullableInput(
 	serverResponse$: Observable<FormInputResponse>
 ): InputModel<InputState, InputCallbackProps> {
 	const valueHandler = createHandler<string>();
-	const value$ = valueHandler.value$.pipe(startWith(""));
+	const value$ = merge(
+		valueHandler.value$.pipe(startWith("")),
+		serverResponse$.pipe(map(sr => sr.value))
+	);
 	const focused = createHandler<boolean>();
 	const focused$ = focused.value$.pipe(startWith(false));
 	const visited$ = focused.value$.pipe(mapTo(true), startWith(false));
@@ -134,7 +152,10 @@ function createNonNullableInput(
 			map(r => (r.error ? r.error : null)),
 			startWith(null)
 		),
-		focused$.pipe(mapTo(null))
+		focused$.pipe(
+			filter(focused => focused),
+			mapTo(null)
+		)
 	);
 
 	const error$ = combineLatest(serverError$, userError$).pipe(
@@ -157,9 +178,13 @@ function createNonNullableInput(
 	});
 }
 
-function createAccount() {
-	const sitename = createNonNullableInput(of({ value: "" }));
-	const username = createNonNullableInput(of({ value: "" }));
+function createAccount(serverResponse: Observable<FormAccountResponse>) {
+	const sitename = createNonNullableInput(
+		serverResponse.pipe(map(r => r.sitename))
+	);
+	const username = createNonNullableInput(
+		serverResponse.pipe(map(r => r.username))
+	);
 
 	const state = combineLatest(sitename.state, username.state).pipe(
 		map(([sitename, username]) => ({ sitename, username }))
@@ -173,18 +198,11 @@ function createAccount() {
 
 export const AppForm = withRX(AppFormRaw)(_props$ => {
 	const submitHandler = createHandler<void>();
-	const formResponse = submitHandler.value$.pipe(
-		switchMap(() =>
-			from(
-				submitForm({
-					name: "sdf",
-					password: "pass",
-					confirmPassword: "sdf",
-					accounts: []
-				})
-			)
-		)
-	);
+	const formDataHandler = createHandler<FormModel>();
+
+	const formResponse = submitHandler.value$
+		.pipe(withLatestFrom(formDataHandler.value$))
+		.pipe(switchMap(([_, data]) => from(submitForm(data))));
 
 	const serverErrors = formResponse.pipe(filter(isFormResponseFailure));
 
@@ -208,7 +226,39 @@ export const AppForm = withRX(AppFormRaw)(_props$ => {
 				: null
 		};
 	});
-	const accounts = arrayModels(defaultAccountState, createAccount);
+	const accounts = arrayModels(
+		defaultAccountState,
+		createAccount,
+		serverErrors.pipe(map(r => r.errors.accounts))
+	);
+
+	combineLatest(
+		name.state,
+		password.state,
+		confirmPassword.state,
+		accounts.state
+	)
+		.pipe(
+			map(
+				([name, password, confirmPassword, accounts]): FormModel => {
+					return {
+						name: name.value,
+						password: password.value,
+						confirmPassword: confirmPassword.value,
+						accounts: accounts.map(account => {
+							return {
+								username: account.state.username.value,
+								sitename: account.state.sitename.value
+							};
+						})
+					};
+				}
+			),
+			distinctUntilChanged(isFormEqual)
+		)
+		.subscribe(form => {
+			formDataHandler.handle(form);
+		});
 
 	return {
 		defaultProps: {
@@ -228,7 +278,7 @@ export const AppForm = withRX(AppFormRaw)(_props$ => {
 			name: name.state,
 			password: password.state,
 			confirmPassword: confirmPassword.state,
-			accounts: accounts.values$
+			accounts: accounts.state
 		}
 	};
 });
