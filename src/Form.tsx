@@ -124,22 +124,15 @@ function createInputModel(): InputModel2 {
 		startWith(false),
 		shareReplay(1)
 	);
-	const debug = {
-		value: ""
-	};
 
 	return {
 		value$: valueHandler.value$.pipe(startWith(""), shareReplay(1)),
 		isFocused$,
 		isVisited$,
-		onChange: (value: string) => {
-			debug.value = value;
-			valueHandler.handle(value);
-		},
+		onChange: value => valueHandler.handle(value),
 		onBlur: () => focused.handle(false),
-		onFocus: () => focused.handle(true),
-		debug
-	} as any;
+		onFocus: () => focused.handle(true)
+	};
 }
 
 function createAccountModel() {
