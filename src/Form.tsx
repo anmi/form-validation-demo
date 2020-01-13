@@ -32,6 +32,7 @@ type AppFormProps = {
 	password: InputProps;
 	confirmPassword: InputProps;
 	accounts: AccountProps[];
+	isSending: boolean;
 	onAddAccountClick: () => void;
 	onRemoveAccountClick: (id: Id) => void;
 	onSubmitClick: () => void;
@@ -45,15 +46,20 @@ const AppFormRaw: React.FC<AppFormProps> = props => {
 		password,
 		confirmPassword,
 		accounts,
+		isSending,
 		onAddAccountClick,
 		onRemoveAccountClick,
 		onSubmitClick
 	} = props;
 	return (
 		<div>
-			<Input name="Name" {...name} />
-			<Input name="Password" {...password} />
-			<Input name="ConfirmPassword" {...confirmPassword} />
+			<Input name="Name" {...name} disabled={isSending} />
+			<Input name="Password" {...password} disabled={isSending} />
+			<Input
+				name="ConfirmPassword"
+				{...confirmPassword}
+				disabled={isSending}
+			/>
 			<Form.Row as={Col}>
 				<Col>
 					<Form.Label>Accounts:</Form.Label>
@@ -68,6 +74,7 @@ const AppFormRaw: React.FC<AppFormProps> = props => {
 									name="Sitename"
 									{...account.sitename}
 									showLabel={false}
+									disabled={isSending}
 								/>
 							</Col>
 							<Col>
@@ -75,6 +82,7 @@ const AppFormRaw: React.FC<AppFormProps> = props => {
 									name="Username"
 									{...account.username}
 									showLabel={false}
+									disabled={isSending}
 								/>
 							</Col>
 							<Col>
@@ -83,6 +91,7 @@ const AppFormRaw: React.FC<AppFormProps> = props => {
 									onClick={() =>
 										onRemoveAccountClick(account.id)
 									}
+									disabled={isSending}
 								>
 									Remove
 								</Button>
@@ -92,12 +101,20 @@ const AppFormRaw: React.FC<AppFormProps> = props => {
 				);
 			})}
 			<Form.Group as={Col}>
-				<Button variant="primary" onClick={onAddAccountClick}>
+				<Button
+					variant="primary"
+					onClick={onAddAccountClick}
+					disabled={isSending}
+				>
 					Add account
 				</Button>
 			</Form.Group>
 			<Form.Group as={Col}>
-				<Button variant="primary" onClick={onSubmitClick}>
+				<Button
+					variant="primary"
+					onClick={onSubmitClick}
+					disabled={isSending}
+				>
 					Submit
 				</Button>
 			</Form.Group>
@@ -322,6 +339,11 @@ export const AppForm = withRX(AppFormRaw)(_props$ => {
 			shareReplay(1)
 		);
 
+	const isSending$ = merge(
+		submitHandler.value$.pipe(mapTo(true)),
+		serverResponse$.pipe(mapTo(false))
+	);
+
 	const serverErrors$ = serverResponse$.pipe(
 		filter(isFormResponseFailureMapped),
 		map(response => response.errors)
@@ -384,6 +406,7 @@ export const AppForm = withRX(AppFormRaw)(_props$ => {
 			password: defaultInputProps(),
 			confirmPassword: defaultInputProps(),
 			accounts: [],
+			isSending: false,
 			onAddAccountClick: accountsList.onAddClick,
 			onRemoveAccountClick: accountsList.onRemoveClick,
 			onSubmitClick: () => submitHandler.handle()
@@ -392,7 +415,8 @@ export const AppForm = withRX(AppFormRaw)(_props$ => {
 			name: nameProps$,
 			password: passwordProps$,
 			confirmPassword: confirmPasswordProps$,
-			accounts: accountsProps$
+			accounts: accountsProps$,
+			isSending: isSending$
 		}
 	};
 });

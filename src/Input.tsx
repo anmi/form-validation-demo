@@ -12,6 +12,7 @@ export type InputProps = {
 	name: string;
 	value: string;
 	error: string | null;
+	disabled?: boolean;
 	showLabel?: boolean;
 } & InputCallbackProps;
 
@@ -20,6 +21,7 @@ export const Input: React.FC<InputProps> = ({
 	value,
 	error,
 	showLabel = true,
+	disabled,
 	onBlur,
 	onFocus,
 	onChange
@@ -36,6 +38,7 @@ export const Input: React.FC<InputProps> = ({
 					onBlur={onBlur}
 					onFocus={onFocus}
 					isInvalid={error !== null}
+					disabled={disabled}
 					onChange={(e: any) => onChange(e.target.value)}
 				/>
 				{error !== null ? (
