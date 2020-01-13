@@ -1,3 +1,5 @@
+import { Id } from "../utils/makeId";
+
 export interface AccountModel {
 	sitename: string;
 	username: string;
@@ -9,6 +11,10 @@ export interface FormModel {
 	confirmPassword: string;
 	accounts: AccountModel[];
 }
+
+export type AccountModelMapped = { id: Id } & AccountModel;
+
+export type FormModelMapped = { accounts: AccountModelMapped[] } & FormModel;
 
 function isFormAccountEqual(a: AccountModel, b: AccountModel) {
 	return a.username === b.username && a.sitename === b.sitename;
@@ -57,3 +63,29 @@ export type FormResponse =
 			isSuccess: true;
 	  }
 	| FormResponseFailure;
+
+type FormAccountResponseMapped = {
+	id: Id;
+} & FormAccountResponse;
+
+type FormModelResponseMapped = {
+	name: FormInputResponse;
+	password: FormInputResponse;
+	confirmPassword: FormInputResponse;
+	accounts: FormAccountResponseMapped[];
+};
+
+type FormResponseFailureMapped = {
+	isSuccess: false;
+	errors: FormModelResponseMapped;
+};
+
+export type FormResponseMapped =
+	| { isSuccess: true }
+	| FormResponseFailureMapped;
+
+export function isFormResponseFailureMapped(
+	response: FormResponseMapped
+): response is FormResponseFailureMapped {
+	return !response.isSuccess;
+}

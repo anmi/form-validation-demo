@@ -1,7 +1,6 @@
 import React from "react";
 import { Form, Col } from "react-bootstrap";
 import "bootstrap/dist/css/bootstrap.min.css";
-import { InputState } from "./model/InputState";
 
 export interface InputCallbackProps {
 	onBlur: () => void;
@@ -11,13 +10,15 @@ export interface InputCallbackProps {
 
 export type InputProps = {
 	name: string;
-	state: InputState;
+	value: string;
+	error: string | null;
 	showLabel?: boolean;
 } & InputCallbackProps;
 
 export const Input: React.FC<InputProps> = ({
 	name,
-	state,
+	value,
+	error,
 	showLabel = true,
 	onBlur,
 	onFocus,
@@ -31,15 +32,15 @@ export const Input: React.FC<InputProps> = ({
 					type="text"
 					placeholder={name}
 					required
-					value={state.value}
+					value={value}
 					onBlur={onBlur}
 					onFocus={onFocus}
-					isInvalid={state.error !== null}
+					isInvalid={error !== null}
 					onChange={(e: any) => onChange(e.target.value)}
 				/>
-				{state.error !== null ? (
+				{error !== null ? (
 					<Form.Control.Feedback type="invalid">
-						{state.error}
+						{error}
 					</Form.Control.Feedback>
 				) : null}
 			</Form.Group>

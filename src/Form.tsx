@@ -1,9 +1,8 @@
 import React from "react";
 import "bootstrap/dist/css/bootstrap.min.css";
-import { Input, InputCallbackProps } from "./Input";
+import { Input } from "./Input";
 import { withRX } from "@devexperts/react-kit/dist/utils/with-rx2";
 import { createHandler } from "@devexperts/rx-utils/dist/create-handler.utils";
-import { InputState, InputModel } from "./model/InputState";
 import {
 	startWith,
 	map,
@@ -11,99 +10,79 @@ import {
 	switchMap,
 	filter,
 	withLatestFrom,
-	distinctUntilChanged,
-	delay
+	scan,
+	tap,
+	shareReplay
 } from "rxjs/operators";
-import { combineLatest, from, Observable, of, merge } from "rxjs";
-import { arrayModels, ItemWrapper, ModelsCallbacks } from "./utils/arrayModels";
+import { combineLatest, from, Observable, merge, BehaviorSubject } from "rxjs";
 import { Form, Col, Button } from "react-bootstrap";
-import { submitForm } from "./services/form";
-import {
-	FormInputResponse,
-	isFormResponseFailure,
-	FormAccountResponse,
-	FormModel,
-	isFormEqual
-} from "./model/formModel";
+import { submitFormMapped } from "./services/form";
+import { isFormResponseFailureMapped } from "./model/formModel";
+import { makeId, Id } from "./utils/makeId";
+import { combineLatestArray } from "./utils/combineLatestArray";
+
+type AccountProps = {
+	id: Id;
+	sitename: InputProps;
+	username: InputProps;
+};
 
 type AppFormProps = {
-	name: InputState;
-	nameCallbacks: InputCallbackProps;
-	password: InputState;
-	passwordCallbacks: InputCallbackProps;
-	confirmPassword: InputState;
-	confirmPasswordCallbacks: InputCallbackProps;
-	accounts: ItemWrapper<AccountState>[];
-	accountsCallbacks: ModelsCallbacks<AccountCallbacks>;
-	submitForm: () => void;
+	name: InputProps;
+	password: InputProps;
+	confirmPassword: InputProps;
+	accounts: AccountProps[];
+	onAddAccountClick: () => void;
+	onRemoveAccountClick: (id: Id) => void;
+	onSubmitClick: () => void;
 };
 
-const defaultInputState: InputState = {
-	value: "",
-	error: null,
-	isFocused: false,
-	isVisited: false
-};
-
-type AccountState = { sitename: InputState; username: InputState };
-
-type AccountCallbacks = {
-	sitename: InputCallbackProps;
-	username: InputCallbackProps;
-};
-
-const defaultAccountState: AccountState = {
-	sitename: defaultInputState,
-	username: defaultInputState
-};
+type AccountState2 = { id: Id; sitename: InputModel2; username: InputModel2 };
 
 const AppFormRaw: React.FC<AppFormProps> = props => {
+	const {
+		name,
+		password,
+		confirmPassword,
+		accounts,
+		onAddAccountClick,
+		onRemoveAccountClick,
+		onSubmitClick
+	} = props;
 	return (
 		<div>
-			<Input name="Name" state={props.name} {...props.nameCallbacks} />
-			<Input
-				name="Password"
-				state={props.password}
-				{...props.passwordCallbacks}
-			/>
-			<Input
-				name="ConfirmPassword"
-				state={props.confirmPassword}
-				{...props.confirmPasswordCallbacks}
-			/>
+			<Input name="Name" {...name} />
+			<Input name="Password" {...password} />
+			<Input name="ConfirmPassword" {...confirmPassword} />
 			<Form.Row as={Col}>
 				<Col>
 					<Form.Label>Accounts:</Form.Label>
 				</Col>
 			</Form.Row>
-			{props.accounts.map(account => {
+			{accounts.map(account => {
 				return (
 					<div key={account.id}>
 						<Form.Row>
 							<Col>
 								<Input
 									name="Sitename"
-									state={account.state.sitename}
-									{...props.accountsCallbacks.item(account.id)
-										.sitename}
+									{...account.sitename}
 									showLabel={false}
 								/>
 							</Col>
 							<Col>
 								<Input
 									name="Username"
-									state={account.state.username}
-									{...props.accountsCallbacks.item(account.id)
-										.username}
+									{...account.username}
 									showLabel={false}
 								/>
 							</Col>
 							<Col>
 								<Button
 									variant="dark"
-									onClick={props.accountsCallbacks.remove(
-										account.id
-									)}
+									onClick={() =>
+										onRemoveAccountClick(account.id)
+									}
 								>
 									Remove
 								</Button>
@@ -113,12 +92,12 @@ const AppFormRaw: React.FC<AppFormProps> = props => {
 				);
 			})}
 			<Form.Group as={Col}>
-				<Button variant="primary" onClick={props.accountsCallbacks.add}>
+				<Button variant="primary" onClick={onAddAccountClick}>
 					Add account
 				</Button>
 			</Form.Group>
 			<Form.Group as={Col}>
-				<Button variant="primary" onClick={props.submitForm}>
+				<Button variant="primary" onClick={onSubmitClick}>
 					Submit
 				</Button>
 			</Form.Group>
@@ -126,19 +105,99 @@ const AppFormRaw: React.FC<AppFormProps> = props => {
 	);
 };
 
-function createNonNullableInput(
-	serverResponse$: Observable<FormInputResponse>
-): InputModel<InputState, InputCallbackProps> {
-	const valueHandler = createHandler<string>();
-	const value$ = merge(
-		valueHandler.value$.pipe(startWith("")),
-		serverResponse$.pipe(map(sr => sr.value))
-	);
-	const focused = createHandler<boolean>();
-	const focused$ = focused.value$.pipe(startWith(false));
-	const visited$ = focused.value$.pipe(mapTo(true), startWith(false));
+type Operator<T> = (from: T) => T;
 
-	const userError$ = combineLatest(value$, focused$, visited$).pipe(
+type InputModel2 = {
+	value$: Observable<string>;
+	isFocused$: Observable<boolean>;
+	isVisited$: Observable<boolean>;
+	onChange: (value: string) => void;
+	onBlur: () => void;
+	onFocus: () => void;
+};
+
+function createInputModel(): InputModel2 {
+	const valueHandler = createHandler<string>();
+	const focused = createHandler<boolean>();
+	const isFocused$ = focused.value$.pipe(startWith(false));
+	const isVisited$ = focused.value$.pipe(mapTo(true), startWith(false));
+
+	return {
+		value$: valueHandler.value$.pipe(startWith("")),
+		isFocused$,
+		isVisited$,
+		onChange: value => valueHandler.handle(value),
+		onBlur: () => focused.handle(false),
+		onFocus: () => focused.handle(true)
+	};
+}
+
+function createAccountModel() {
+	return {
+		sitename: createInputModel(),
+		username: createInputModel()
+	};
+}
+
+type ListItemWrapper<T> = {
+	id: string;
+	item: T;
+};
+
+type AccountsState = ListItemWrapper<AccountState2>[];
+
+type List = {
+	list$: Observable<AccountsState>;
+	onAddClick: () => void;
+	onRemoveClick: (id: Id) => void;
+};
+
+function createAccountsList(): List {
+	const listReducers = new BehaviorSubject<Operator<AccountsState>>(a => a);
+	const list$ = listReducers.pipe(
+		scan((state, fn) => fn(state), [] as AccountsState)
+	);
+	const onAddClick = () => {
+		const id = makeId();
+		listReducers.next(list => [
+			...list,
+			{ id, item: createAccountModel() } as ListItemWrapper<AccountState2>
+		]);
+	};
+	const onRemoveClick = (id: Id) =>
+		listReducers.next(list => list.filter(item => item.id !== id));
+
+	return {
+		list$,
+		onAddClick,
+		onRemoveClick
+	};
+}
+
+function defaultInputProps(): InputProps {
+	return {
+		value: "",
+		error: null,
+		onChange: (_: string) => undefined,
+		onBlur: () => undefined,
+		onFocus: () => undefined
+	};
+}
+
+interface InputProps {
+	value: string;
+	error: string | null;
+	onChange: (value: string) => void;
+	onBlur: () => void;
+	onFocus: () => void;
+}
+
+function nonNullableInput(
+	input: InputModel2,
+	serverResponse$: Observable<string | undefined>
+): Observable<InputProps> {
+	const { value$, isFocused$, isVisited$, onFocus, onBlur, onChange } = input;
+	const userError$ = combineLatest(value$, isFocused$, isVisited$).pipe(
 		map(([value, focused, visited]) => {
 			if (value === "" && !focused && visited) {
 				return "Empty!";
@@ -149,10 +208,10 @@ function createNonNullableInput(
 	);
 	const serverError$ = merge(
 		serverResponse$.pipe(
-			map(r => (r.error ? r.error : null)),
+			map(r => (r ? r : null)),
 			startWith(null)
 		),
-		focused$.pipe(
+		isFocused$.pipe(
 			filter(focused => focused),
 			mapTo(null)
 		)
@@ -162,123 +221,130 @@ function createNonNullableInput(
 		map(([user, server]) => user || server)
 	);
 
-	const state$ = combineLatest(error$, value$, focused$, visited$).pipe(
-		map(([error, value, isFocused, isVisited]) => ({
-			error,
+	const props$ = combineLatest(value$, error$).pipe(
+		map(([value, error]) => ({
 			value,
-			isFocused,
-			isVisited
+			error,
+			onChange,
+			onFocus,
+			onBlur
 		}))
 	);
 
-	return new InputModel(state$, {
-		onBlur: () => focused.handle(false),
-		onFocus: () => focused.handle(true),
-		onChange: value => valueHandler.handle(value)
-	});
-}
-
-function createAccount(serverResponse: Observable<FormAccountResponse>) {
-	const sitename = createNonNullableInput(
-		serverResponse.pipe(map(r => r.sitename))
-	);
-	const username = createNonNullableInput(
-		serverResponse.pipe(map(r => r.username))
-	);
-
-	const state = combineLatest(sitename.state, username.state).pipe(
-		map(([sitename, username]) => ({ sitename, username }))
-	);
-
-	return new InputModel<AccountState, AccountCallbacks>(state, {
-		sitename: sitename.callbacks,
-		username: username.callbacks
-	});
+	return props$;
 }
 
 export const AppForm = withRX(AppFormRaw)(_props$ => {
-	const submitHandler = createHandler<void>();
-	const formDataHandler = createHandler<FormModel>();
+	const name = createInputModel();
+	const password = createInputModel();
+	const confirmPassword = createInputModel();
+	const accountsList = createAccountsList();
 
-	const formResponse = submitHandler.value$
-		.pipe(withLatestFrom(formDataHandler.value$))
-		.pipe(switchMap(([_, data]) => from(submitForm(data))));
-
-	const serverErrors = formResponse.pipe(filter(isFormResponseFailure));
-
-	const name = createNonNullableInput(
-		serverErrors.pipe(map(r => r.errors.name))
-	);
-	const password = createNonNullableInput(
-		serverErrors.pipe(map(r => r.errors.password))
-	);
-	const confirmPassword = createNonNullableInput(
-		serverErrors.pipe(map(r => r.errors.confirmPassword))
-	).mapWith(password.state, (confirm, password) => {
-		return {
-			...confirm,
-			error: confirm.error
-				? confirm.error
-				: confirm.value !== password.value &&
-				  confirm.isVisited &&
-				  !confirm.isFocused
-				? "Passwords didn't match"
-				: null
-		};
-	});
-	const accounts = arrayModels(
-		defaultAccountState,
-		createAccount,
-		serverErrors.pipe(map(r => r.errors.accounts))
-	);
-
-	combineLatest(
-		name.state,
-		password.state,
-		confirmPassword.state,
-		accounts.state
-	)
-		.pipe(
-			map(
-				([name, password, confirmPassword, accounts]): FormModel => {
-					return {
-						name: name.value,
-						password: password.value,
-						confirmPassword: confirmPassword.value,
-						accounts: accounts.map(account => {
-							return {
-								username: account.state.username.value,
-								sitename: account.state.sitename.value
-							};
-						})
-					};
-				}
-			),
-			distinctUntilChanged(isFormEqual)
+	const formData = combineLatest(
+		name.value$,
+		password.value$,
+		confirmPassword.value$,
+		accountsList.list$
+	).pipe(
+		switchMap(([name, password, confirmPassword, list]) =>
+			combineLatestArray(
+				list.map(itm => {
+					return combineLatest(
+						itm.item.sitename.value$,
+						itm.item.username.value$
+					).pipe(
+						map(([sitename, username]) => ({
+							sitename,
+							username,
+							id: itm.id
+						}))
+					);
+				})
+			).pipe(
+				map(accounts => ({
+					name,
+					password,
+					confirmPassword,
+					accounts
+				}))
+			)
 		)
-		.subscribe(form => {
-			formDataHandler.handle(form);
-		});
+	);
+
+	const submitHandler = createHandler<void>();
+
+	const serverResponse$ = submitHandler.value$
+		.pipe(withLatestFrom(formData))
+		.pipe(
+			switchMap(([_, data]) => from(submitFormMapped(data))),
+			shareReplay(1)
+		);
+
+	const serverErrors$ = serverResponse$.pipe(
+		filter(isFormResponseFailureMapped),
+		map(response => response.errors)
+	);
+
+	const nameProps$ = nonNullableInput(
+		name,
+		serverErrors$.pipe(map(r => r.name.error))
+	);
+	const passwordProps$ = nonNullableInput(
+		password,
+		serverErrors$.pipe(map(r => r.password.error))
+	);
+	const confirmPasswordProps$ = nonNullableInput(
+		confirmPassword,
+		serverErrors$.pipe(map(r => r.confirmPassword.error))
+	);
+
+	const accountsProps$ = accountsList.list$.pipe(
+		switchMap(list => {
+			const ol = list.map(item => {
+				const serverErrorAccount$ = serverErrors$.pipe(
+					map(errors => errors.accounts.find(s => s.id === item.id))
+				);
+				const it = combineLatest(
+					nonNullableInput(
+						item.item.sitename,
+						serverErrorAccount$.pipe(
+							map(a => (a ? a.sitename.error : undefined))
+						)
+					),
+					nonNullableInput(
+						item.item.username,
+						serverErrorAccount$.pipe(
+							map(a => (a ? a.username.error : undefined))
+						)
+					)
+				).pipe(
+					map(([sitename, username]) => {
+						return { sitename, username, id: item.id };
+					})
+				);
+
+				return it;
+			});
+
+			return combineLatestArray(ol);
+		})
+	);
 
 	return {
 		defaultProps: {
-			name: defaultInputState,
-			nameCallbacks: name.callbacks,
-			password: defaultInputState,
-			passwordCallbacks: password.callbacks,
-			confirmPassword: defaultInputState,
-			confirmPasswordCallbacks: confirmPassword.callbacks,
+			name: defaultInputProps(),
+			password: defaultInputProps(),
+			confirmPassword: defaultInputProps(),
 			accounts: [],
-			accountsCallbacks: accounts.callbacks,
-			submitForm: () => {
-				submitHandler.handle();
-			}
+			onAddAccountClick: accountsList.onAddClick,
+			onRemoveAccountClick: accountsList.onRemoveClick,
+			onSubmitClick: () => submitHandler.handle()
 		},
 		props: {
-			name: name.state,
-			password: password.state,
-			confirmPassword: confirmPassword.state,
-			accounts: accounts.state
+			name: nameProps$,
+			password: passwordProps$,
+			confirmPassword: confirmPasswordProps$,
+			accounts: accountsProps$
 		}
 	};
 });
