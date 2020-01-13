@@ -4,6 +4,7 @@ import {
 	FormModelMapped,
 	FormResponseMapped
 } from "../model/formModel";
+import { validateNonEmpty, validateHostname } from "../utils/validators";
 
 function submitForm(form: FormModel) {
 	return new Promise<FormResponse>((resolve, _reject) => {
@@ -13,25 +14,36 @@ function submitForm(form: FormModel) {
 				errors: {
 					name: {
 						value: form.name,
-						error: "Name error"
+						error: validateNonEmpty(form.name) || undefined
 					},
 					password: {
 						value: form.password,
-						error: "Password error"
+						error: validateNonEmpty(form.password) || undefined
 					},
 					confirmPassword: {
 						value: form.confirmPassword,
-						error: "Confirm password error"
+						error:
+							validateNonEmpty(form.confirmPassword) ||
+							form.password !== form.confirmPassword
+								? "Passwords didn't match"
+								: undefined
 					},
 					accounts: form.accounts.map(account => {
 						return {
 							sitename: {
 								value: account.sitename,
-								error: "Sitename error"
+								error:
+									validateNonEmpty(account.sitename) ||
+									validateHostname(account.sitename) ||
+									undefined
 							},
 							username: {
 								value: account.username,
-								error: "Username error"
+								error:
+									validateNonEmpty(account.username) ||
+									(account.username === "user"
+										? "User already exists"
+										: undefined)
 							}
 						};
 					})

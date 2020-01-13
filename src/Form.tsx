@@ -19,6 +19,7 @@ import { submitFormMapped } from "./services/form";
 import { isFormResponseFailureMapped } from "./model/formModel";
 import { makeId, Id } from "./utils/makeId";
 import { combineLatestArray } from "./utils/combineLatestArray";
+import { validateHostname } from "./utils/validators";
 
 type AccountProps = {
 	id: Id;
@@ -159,7 +160,8 @@ function createAccountsList(): List {
 	const listReducers = new BehaviorSubject<Operator<AccountsState>>(a => a);
 	const list$ = listReducers.pipe(
 		startWith((a: AccountsState) => a),
-		scan((state, fn) => fn(state), [] as AccountsState)
+		scan((state, fn) => fn(state), [] as AccountsState),
+		shareReplay(1)
 	);
 	const onAddClick = () => {
 		const id = makeId();
@@ -237,15 +239,19 @@ function nonNullableInput(
 	return makeInputProps(input, serverResponse$, getNonEmptyError(input));
 }
 
-function getNonEmptyError(input: InputModel2) {
-	const { value$, isFocused$, isVisited$ } = input;
-	const userError$ = combineLatest(value$, isFocused$, isVisited$).pipe(
-		map(([value, focused, visited]) =>
-			value === "" && !focused && visited ? "Empty!" : null
+function lostFocusError(
+	input: InputModel2,
+	validate: (value: string) => string | null
+) {
+	return combineLatest(input.value$, input.isFocused$, input.isVisited$).pipe(
+		map(([value, isFocused, isVisited]) =>
+			!isFocused && isVisited ? validate(value) : null
 		)
 	);
+}
 
-	return userError$;
+function getNonEmptyError(input: InputModel2) {
+	return lostFocusError(input, value => (value === "" ? "Empty!" : null));
 }
 
 function shouldMatchError(input: InputModel2, input2: InputModel2) {
@@ -260,6 +266,12 @@ function shouldMatchError(input: InputModel2, input2: InputModel2) {
 				? "Passwords should match"
 				: null
 		)
+	);
+}
+
+function combineErrors(...errors$: Observable<string | null>[]) {
+	return combineLatestArray(errors$).pipe(
+		map(errors => errors.reduce((c, error) => c || error, null))
 	);
 }
 
@@ -326,23 +338,27 @@ export const AppForm = withRX(AppFormRaw)(_props$ => {
 	const confirmPasswordProps$ = makeInputProps(
 		confirmPassword,
 		serverErrors$.pipe(map(r => r.confirmPassword.error)),
-		combineLatest(
+		combineErrors(
 			getNonEmptyError(confirmPassword),
 			shouldMatchError(confirmPassword, password)
-		).pipe(map(([nonNull, shouldMatch]) => nonNull || shouldMatch))
+		)
 	);
 
 	const accountsProps$ = accountsList.list$.pipe(
 		switchMap(list => {
-			const ol = list.map(item => {
+			const accounts = list.map(item => {
 				const serverErrorAccount$ = serverErrors$.pipe(
 					map(errors => errors.accounts.find(s => s.id === item.id))
 				);
-				const it = combineLatest(
-					nonNullableInput(
+				return combineLatest(
+					makeInputProps(
 						item.item.sitename,
 						serverErrorAccount$.pipe(
 							map(a => (a ? a.sitename.error : undefined))
+						),
+						combineErrors(
+							getNonEmptyError(item.item.sitename),
+							lostFocusError(item.item.sitename, validateHostname)
 						)
 					),
 					nonNullableInput(
@@ -356,11 +372,9 @@ export const AppForm = withRX(AppFormRaw)(_props$ => {
 						return { sitename, username, id: item.id };
 					})
 				);
-
-				return it;
 			});
 
-			return combineLatestArray(ol);
+			return combineLatestArray(accounts);
 		})
 	);
 
