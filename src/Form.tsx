@@ -201,16 +201,7 @@ function makeInputProps(
 	serverResponse$: Observable<string | undefined>,
 	userError$: Observable<string | null>
 ): Observable<InputProps> {
-	const { value$, isFocused$, isVisited$, onFocus, onBlur, onChange } = input;
-	// const userError$ = combineLatest(value$, isFocused$, isVisited$).pipe(
-	// 	map(([value, focused, visited]) => {
-	// 		if (value === "" && !focused && visited) {
-	// 			return "Empty!";
-	// 		} else {
-	// 			return null;
-	// 		}
-	// 	})
-	// );
+	const { value$, isFocused$, onFocus, onBlur, onChange } = input;
 	const serverError$ = merge(
 		serverResponse$.pipe(
 			map(r => (r ? r : null)),
