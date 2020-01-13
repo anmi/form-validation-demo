@@ -196,20 +196,21 @@ interface InputProps {
 	onFocus: () => void;
 }
 
-function nonNullableInput(
+function makeInputProps(
 	input: InputModel2,
-	serverResponse$: Observable<string | undefined>
+	serverResponse$: Observable<string | undefined>,
+	userError$: Observable<string | null>
 ): Observable<InputProps> {
 	const { value$, isFocused$, isVisited$, onFocus, onBlur, onChange } = input;
-	const userError$ = combineLatest(value$, isFocused$, isVisited$).pipe(
-		map(([value, focused, visited]) => {
-			if (value === "" && !focused && visited) {
-				return "Empty!";
-			} else {
-				return null;
-			}
-		})
-	);
+	// const userError$ = combineLatest(value$, isFocused$, isVisited$).pipe(
+	// 	map(([value, focused, visited]) => {
+	// 		if (value === "" && !focused && visited) {
+	// 			return "Empty!";
+	// 		} else {
+	// 			return null;
+	// 		}
+	// 	})
+	// );
 	const serverError$ = merge(
 		serverResponse$.pipe(
 			map(r => (r ? r : null)),
@@ -236,6 +237,39 @@ function nonNullableInput(
 	);
 
 	return props$;
+}
+
+function nonNullableInput(
+	input: InputModel2,
+	serverResponse$: Observable<string | undefined>
+): Observable<InputProps> {
+	return makeInputProps(input, serverResponse$, getNonEmptyError(input));
+}
+
+function getNonEmptyError(input: InputModel2) {
+	const { value$, isFocused$, isVisited$ } = input;
+	const userError$ = combineLatest(value$, isFocused$, isVisited$).pipe(
+		map(([value, focused, visited]) =>
+			value === "" && !focused && visited ? "Empty!" : null
+		)
+	);
+
+	return userError$;
+}
+
+function shouldMatchError(input: InputModel2, input2: InputModel2) {
+	return combineLatest(
+		input.value$,
+		input.isFocused$,
+		input.isVisited$,
+		input2.value$
+	).pipe(
+		map(([value, isFocused, isVisited, value2]) =>
+			value !== value2 && !isFocused && isVisited
+				? "Passwords should match"
+				: null
+		)
+	);
 }
 
 export const AppForm = withRX(AppFormRaw)(_props$ => {
@@ -298,9 +332,13 @@ export const AppForm = withRX(AppFormRaw)(_props$ => {
 		password,
 		serverErrors$.pipe(map(r => r.password.error))
 	);
-	const confirmPasswordProps$ = nonNullableInput(
+	const confirmPasswordProps$ = makeInputProps(
 		confirmPassword,
-		serverErrors$.pipe(map(r => r.confirmPassword.error))
+		serverErrors$.pipe(map(r => r.confirmPassword.error)),
+		combineLatest(
+			getNonEmptyError(confirmPassword),
+			shouldMatchError(confirmPassword, password)
+		).pipe(map(([nonNull, shouldMatch]) => nonNull || shouldMatch))
 	);
 
 	const accountsProps$ = accountsList.list$.pipe(
