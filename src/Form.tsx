@@ -11,7 +11,6 @@ import {
 	filter,
 	withLatestFrom,
 	scan,
-	tap,
 	shareReplay
 } from "rxjs/operators";
 import { combineLatest, from, Observable, merge, BehaviorSubject } from "rxjs";
@@ -119,17 +118,28 @@ type InputModel2 = {
 function createInputModel(): InputModel2 {
 	const valueHandler = createHandler<string>();
 	const focused = createHandler<boolean>();
-	const isFocused$ = focused.value$.pipe(startWith(false));
-	const isVisited$ = focused.value$.pipe(mapTo(true), startWith(false));
+	const isFocused$ = focused.value$.pipe(startWith(false), shareReplay(1));
+	const isVisited$ = focused.value$.pipe(
+		mapTo(true),
+		startWith(false),
+		shareReplay(1)
+	);
+	const debug = {
+		value: ""
+	};
 
 	return {
-		value$: valueHandler.value$.pipe(startWith("")),
+		value$: valueHandler.value$.pipe(startWith(""), shareReplay(1)),
 		isFocused$,
 		isVisited$,
-		onChange: value => valueHandler.handle(value),
+		onChange: (value: string) => {
+			debug.value = value;
+			valueHandler.handle(value);
+		},
 		onBlur: () => focused.handle(false),
-		onFocus: () => focused.handle(true)
-	};
+		onFocus: () => focused.handle(true),
+		debug
+	} as any;
 }
 
 function createAccountModel() {
@@ -155,6 +165,7 @@ type List = {
 function createAccountsList(): List {
 	const listReducers = new BehaviorSubject<Operator<AccountsState>>(a => a);
 	const list$ = listReducers.pipe(
+		startWith((a: AccountsState) => a),
 		scan((state, fn) => fn(state), [] as AccountsState)
 	);
 	const onAddClick = () => {
@@ -261,6 +272,7 @@ export const AppForm = withRX(AppFormRaw)(_props$ => {
 					);
 				})
 			).pipe(
+				startWith([]),
 				map(accounts => ({
 					name,
 					password,
