@@ -1,4 +1,6 @@
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+# React TypeScript RxJS form validation demo app
+
+Take a look how it works: [https://anmi.github.io/form-validation-demo/](https://anmi.github.io/form-validation-demo/).
 
 ## Available Scripts
 
