@@ -10,6 +10,7 @@ const App: React.FC = () => {
 				<a
 					href="https://github.com/anmi/form-validation-demo"
 					target="_blank"
+					rel="noopener noreferrer"
 				>
 					anmi/form-validation-demo
 				</a>

@@ -13,7 +13,7 @@
     "@types/react-dom": "^16.9.4",
     "react": "^16.12.0",
     "react-dom": "^16.12.0",
-    "react-scripts": "3.3.0",
+    "react-scripts": "3.4.0",
     "typescript": "^3.7.4",
     "react-bootstrap": "1.0.0-beta.16",
     "@types/react-bootstrap": "0.32.20",
