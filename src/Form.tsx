@@ -232,11 +232,11 @@ function makeInputProps(
 		)
 	);
 
-	const error$ = combineLatest(serverError$, userError$).pipe(
+	const error$ = combineLatest([serverError$, userError$]).pipe(
 		map(([user, server]) => user || server)
 	);
 
-	const props$ = combineLatest(value$, error$).pipe(
+	const props$ = combineLatest([value$, error$]).pipe(
 		map(([value, error]) => ({
 			value,
 			error,
@@ -260,7 +260,7 @@ function lostFocusError(
 	input: InputModel2,
 	validate: (value: string) => string | null
 ) {
-	return combineLatest(input.value$, input.isFocused$, input.isVisited$).pipe(
+	return combineLatest([input.value$, input.isFocused$, input.isVisited$]).pipe(
 		map(([value, isFocused, isVisited]) =>
 			!isFocused && isVisited ? validate(value) : null
 		)
@@ -272,12 +272,12 @@ function getNonEmptyError(input: InputModel2) {
 }
 
 function shouldMatchError(input: InputModel2, input2: InputModel2) {
-	return combineLatest(
+	return combineLatest([
 		input.value$,
 		input.isFocused$,
 		input.isVisited$,
 		input2.value$
-	).pipe(
+	]).pipe(
 		map(([value, isFocused, isVisited, value2]) =>
 			value !== value2 && !isFocused && isVisited
 				? "Passwords should match"
@@ -298,19 +298,19 @@ export const AppForm = withRX(AppFormRaw)(_props$ => {
 	const confirmPassword = createInputModel();
 	const accountsList = createAccountsList();
 
-	const formData = combineLatest(
+	const formData = combineLatest([
 		name.value$,
 		password.value$,
 		confirmPassword.value$,
 		accountsList.list$
-	).pipe(
+	]).pipe(
 		switchMap(([name, password, confirmPassword, list]) =>
 			combineLatestArray(
 				list.map(itm => {
-					return combineLatest(
+					return combineLatest([
 						itm.item.sitename.value$,
 						itm.item.username.value$
-					).pipe(
+					]).pipe(
 						map(([sitename, username]) => ({
 							sitename,
 							username,
@@ -372,7 +372,7 @@ export const AppForm = withRX(AppFormRaw)(_props$ => {
 				const serverErrorAccount$ = serverErrors$.pipe(
 					map(errors => errors.accounts.find(s => s.id === item.id))
 				);
-				return combineLatest(
+				return combineLatest([
 					makeInputProps(
 						item.item.sitename,
 						serverErrorAccount$.pipe(
@@ -389,7 +389,7 @@ export const AppForm = withRX(AppFormRaw)(_props$ => {
 							map(a => (a ? a.username.error : undefined))
 						)
 					)
-				).pipe(
+				]).pipe(
 					map(([sitename, username]) => {
 						return { sitename, username, id: item.id };
 					})
